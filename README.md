@@ -14,7 +14,7 @@ All problem sets are provided as Jupyter notebooks (`.ipynb`).
 
 ## Prerequisites
 
-You should be comfortable with the topics below. If not, you can **self-study the relevant background with P-SET 0 and the refresher links below**.
+You should be comfortable with the topics below. If not, you can **self-study the relevant background with P-SET 0 and the refresher links below**. Always ask ChatGPT if you have problem debugging.
 
 **Linear Algebra**
 - Vectors/matrices, norms & inner products, eigen/SVD, least squares. 
@@ -31,9 +31,10 @@ You should be comfortable with the topics below. If not, you can **self-study th
 
 **Python / Jupyter / NumPy**
 - Notebooks, vectorization/broadcasting, scientific computing, plotting.  
-- Quick start: <https://numpy.org/doc/stable/user/quickstart.html>
+- Python crash course: <https://fgnt.github.io/python_crashkurs/#/>
+- Numpy Quick start: <https://numpy.org/doc/stable/user/quickstart.html>
 
-**$\LaTeX$**
+**LaTeX**
 - Math symbols like $x^y$, $\int$, $\phi$; equation environments.  
 - Quick start: <https://www.overleaf.com/learn/latex/Learn_LaTeX_in_30_minutes#Adding_math_to_LaTeX>
 
