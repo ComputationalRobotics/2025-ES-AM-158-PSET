@@ -1,48 +1,58 @@
-# Problem set for 2025 fall ES/AM 158
+# Problem Set for 2025 Fall ES/AM 158
 
-This is the P-SET repository for 2025 fall ES/AM 158 class [Introduction to Optimal Control and Reinforcement](https://canvas.harvard.edu/courses/153422). Lecture note can be found [here](https://hankyang.seas.harvard.edu/OptimalControlReinforcementLearning/). 
+This is the P-SET repository for the 2025 Fall ES/AM 158 class, **Introduction to Optimal Control and Reinforcement Learning**.  
+Course site (Canvas): <https://canvas.harvard.edu/courses/153422>  
+Lecture notes: <https://hankyang.seas.harvard.edu/OptimalControlReinforcementLearning/>
 
-All the problem are written in Jupyter notebook `.ipynb` file. For pen and paper problem, you need to fill in the answer in blank cells. For coding problem complete the `TODO` paragraph and left the output in notebook.
+All problem sets are provided as Jupyter notebooks (`.ipynb`).  
+- **Pen-and-paper items:** fill your answers in the designated blank cells.  
+- **Coding items:** complete the `TODO` blocks and **run all cells** so outputs are visible.
 
-**Submission**: Through gradescope, link TBD. You should submit your `.ipynb` file as a pdf and include all the output.
+**Submission.** Submit via **Gradescope** (link TBD). Upload a **single PDF** exported from your `.ipynb` with all outputs shown.
 
 ---
-### Prerequisites
 
-You should be comfortable with the topics below. If not, you can self-check in P-SET 0 and .
+## Prerequisites
+
+You should be comfortable with the topics below. If not, you can **self-study the relevant background with P-SET 0 and the refresher links below**.
 
 **Linear Algebra**
 - Vectors/matrices, norms & inner products, eigen/SVD, least squares. 
 
 **Calculus**
-- Gradients/Jacobians/Hessians; basic integration  
+- Gradients/Jacobians/Hessians; basic integration.
 
 **Probability / Statistics**
-- Probability basics, Bayes’ rule, expectation/variance/covariance, Gaussian distribution; 
-  
+- Probability basics, Bayes’ rule, expectation/variance/covariance, Gaussian distribution.
+
 **Optimization**
-- Convex sets/functions, first-order optimality, gradient descent & backtracking; 
-- Book: [*Convex Optimization, Stephen Boyd*](https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf)
+- Convex sets/functions, first-order optimality, gradient descent & backtracking.  
+- Book: [*Convex Optimization* — Stephen Boyd](https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf)
 
 **Python / Jupyter / NumPy**
-- Notebooks, vectorization/broadcasting, scientific computing, plotting 
-- [Numpy quick start](https://numpy.org/doc/stable/user/quickstart.html) 
+- Notebooks, vectorization/broadcasting, scientific computing, plotting.  
+- Quick start: <https://numpy.org/doc/stable/user/quickstart.html>
 
 **$\LaTeX$**
-- Math symbols like $x^y$,$\int$,$\phi$. Equations.
-- [Latex quick start](https://www.overleaf.com/learn/latex/Learn_LaTeX_in_30_minutes#Adding_math_to_LaTeX)
+- Math symbols like $x^y$, $\int$, $\phi$; equation environments.  
+- Quick start: <https://www.overleaf.com/learn/latex/Learn_LaTeX_in_30_minutes#Adding_math_to_LaTeX>
 
 ---
-### Setting environment
 
-#### Colab environment (Recommended)
-Open the repository with [Colab](https://colab.research.google.com/github/ComputationalRobotics/2025-ES-AM-158-PSET
-)
-```
-!pip install numpy matplotlib tqdm
+## Setting environment
+
+### Colab environment (Recommended)
+
+Open the repository in Colab (lists notebooks in the repo):
+<https://colab.research.google.com/github/ComputationalRobotics/2025-ES-AM-158-PSET>
+
+**Minimal setup cell (put at the top of your notebook):**
+```python
+# Install runtime dependencies (bound to the current kernel)
+%pip install -q numpy matplotlib tqdm
 ```
 
-#### Local python environment
+### Local python environment 
 Python version: 3.10
 ```
 conda create -n 2025ocrl python=3.10
