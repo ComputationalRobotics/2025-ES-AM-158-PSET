@@ -55,7 +55,7 @@ Open the repository in Colab (lists notebooks in the repo):
 **Minimal setup cell (put at the top of your notebook):**
 ```python
 # Install runtime dependencies (bound to the current kernel)
-%pip install -q numpy matplotlib tqdm
+%pip install numpy matplotlib tqdm gymnasium cvxpy
 ```
 
 ### Local python environment 
