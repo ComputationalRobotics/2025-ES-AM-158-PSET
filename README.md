@@ -31,6 +31,7 @@ You should be comfortable with the topics below. If not, you can **self-study th
 
 **Optimization**
 - Convex sets/functions, first-order optimality, gradient descent & backtracking.  
+- Lecture note: <https://hankyang.seas.harvard.edu/OptimalControlReinforcementLearning/appconvex.html>
 - Book: [*Convex Optimization* — Boyd and Vandenberghe](https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf)
 
 **Python / Jupyter / NumPy**
