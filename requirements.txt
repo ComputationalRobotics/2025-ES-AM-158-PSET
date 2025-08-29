@@ -2,5 +2,4 @@ numpy==2.2.6
 matplotlib==3.10.5
 tqdm==4.67.1
 cvxpy==1.7.2
-swig==4.3.1.post0
 gymnasium==1.2.0
