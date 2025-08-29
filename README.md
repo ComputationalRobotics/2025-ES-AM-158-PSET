@@ -1,14 +1,18 @@
 # Problem Set for 2025 Fall ES/AM 158
 
-This is the P-SET repository for the 2025 Fall ES/AM 158 class, **Introduction to Optimal Control and Reinforcement Learning**.  
-Course site (Canvas): <https://canvas.harvard.edu/courses/153422>  
-Lecture notes: <https://hankyang.seas.harvard.edu/OptimalControlReinforcementLearning/>
+This is the P-SET repository for the 2025 Fall ES/AM 158 class, **Introduction to Optimal Control and Reinforcement Learning**, at Harvard University.
+
+- Course site (Canvas): <https://canvas.harvard.edu/courses/153422>  
+
+- Lecture notes: <https://hankyang.seas.harvard.edu/OptimalControlReinforcementLearning/>
+
+- Syllabus: <https://docs.google.com/document/d/1dIRYQZZJDx8K2q1TrodDDLg-bKJWWmj7o7yzOGlIs7o/edit?usp=sharing/>
 
 All problem sets are provided as Jupyter notebooks (`.ipynb`).  
 - **Pen-and-paper items:** fill your answers in the designated blank cells.  
 - **Coding items:** complete the `TODO` blocks and **run all cells** so outputs are visible.
 
-**Submission.** Submit via **Gradescope** (link TBD). Upload a **single PDF** exported from your `.ipynb` with all outputs shown.
+**Submission.** Submit via **Gradescope**. Upload a **single PDF** exported from your `.ipynb` with all outputs shown.
 
 ---
 
@@ -27,7 +31,7 @@ You should be comfortable with the topics below. If not, you can **self-study th
 
 **Optimization**
 - Convex sets/functions, first-order optimality, gradient descent & backtracking.  
-- Book: [*Convex Optimization* — Stephen Boyd](https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf)
+- Book: [*Convex Optimization* — Boyd and Vandenberghe](https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf)
 
 **Python / Jupyter / NumPy**
 - Notebooks, vectorization/broadcasting, scientific computing, plotting.  
