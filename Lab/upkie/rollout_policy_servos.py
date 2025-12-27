@@ -202,7 +202,8 @@ def rollout(
     )
 
     # Load model and bind to this (non-Vec) env
-    model = PPO("MlpPolicy", env, device="auto")
+    model = PPO.load(model_path, env=env, device="auto", print_system_info=False)
+    print(f"[rollout] Loaded model from: {model_path}")
 
     # Seed for reproducibility
     if seed is not None:
@@ -233,7 +234,7 @@ def rollout(
 # ---------------------------------------------------------------------
 def parse_args():
     p = argparse.ArgumentParser(description="Rollout SB3 PPO policy on Upkie-Spine-Servos.")
-    p.add_argument("--model", type=str,
+    p.add_argument("--model", type=str, required=True,
                    help="Path to .zip model file (e.g., ./models/ppo_upkie_servos_final.zip)")
     p.add_argument("--episodes", type=int, default=3, help="Number of evaluation episodes")
     p.add_argument("--deterministic", action="store_true", help="Use deterministic actions")
@@ -244,6 +245,10 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+
+    if not os.path.isfile(args.model):
+        print(f"Model not found: {args.model}", file=sys.stderr)
+        sys.exit(1)
 
     rollout(
         model_path=args.model,

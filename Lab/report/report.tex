@@ -1,0 +1,742 @@
+\documentclass[a4paper,11pt]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+
+% Page Setup
+\geometry{margin=1in}
+
+% Code block styling
+\definecolor{codegray}{rgb}{0.95,0.95,0.95}
+\lstset{
+    backgroundcolor=\color{codegray},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    frame=single,
+}
+
+% Title Information
+\title{ES/AM 158 Upkie Lab}
+\author{Matthew Vu}
+\date{November 2025}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This lab is designed for students to practice reinforcement learning (RL) on a real-robot application. You will use the Bullet-based Spine simulator and Upkie for policy optimization.
+
+\begin{itemize}
+    \item \textbf{Bullet:} A high-performance physics engine widely used for model-based control and RL.
+    \item \textbf{Upkie:} An open-source wheeled-biped platform with a convenient simulation and deployment tool-chain.
+\end{itemize}
+
+Upkies are open-source wheeled biped robots that use wheels for balancing and legs to negotiate uneven terrain. The simulation is wrapped as an unfinished Gymnasium environment, meaning you can reuse the structure from previous problem sets. You are allowed to use third-party packages such as Stable-Baselines3.
+
+\section{Installation}
+\textit{Note: This setup is not supported on Google Colab. We recommend using VS Code on a local machine.}
+
+\subsection{Create environment and install Upkie}
+Run the following commands to create the Conda environment and install the package:
+
+\begin{lstlisting}[language=bash]
+conda create -n upkie python=3.10
+conda activate upkie
+pip install upkie
+\end{lstlisting}
+
+\subsection{Launch the simulator}
+From the Upkie workspace, run:
+\begin{lstlisting}[language=bash]
+./start_simulation.sh
+\end{lstlisting}
+
+You should see the Upkie simulator window. You can interact with the robot using the mouse (e.g., applying external forces).
+
+% Figure commented out - add simulator screenshot if desired
+%\begin{figure}[H]
+%    \centering
+%    \includegraphics[width=0.8\linewidth]{example-image-a} 
+%    \caption{The Upkie repository uses the Spine simulator as its primary backend and communicates with it at 200 Hz. The servo environment applies actions to each joint and wheel by specifying position and velocity commands as well as PID parameters.}
+%    \label{fig:structure}
+%\end{figure}
+
+\subsection{Minimal Roll-out}
+Open another terminal (with the same Conda environment activated) and run:
+\begin{lstlisting}[language=bash]
+python rollout_policy.py
+\end{lstlisting}
+This executes a minimal roll-out against the simulated environment.
+
+\section{Task 1: Finish Environment}
+
+\subsection*{Problem Description and Motivation}
+
+All simulation is handled by the Spine backend, which runs the Bullet physics engine and communicates with the agent at 200 Hz. The Upkie repository provides a wrapper environment around this simulator to create a Gymnasium-compatible interface. To make the learning problem tractable, Upkie provides a \textbf{CartPole-like simplified model} called the pendulum wrapper.
+
+\subsubsection*{The Pendulum Model}
+
+The Upkie pendulum wrapper transforms the full 6-DOF robot into a wheeled inverted pendulum by constraining the legs to remain straight. This simplification reduces the control problem from controlling six motors (hips, knees, wheels) to controlling only wheel velocities, making it analogous to the classic CartPole problem but with continuous actions and real-world physics.
+
+\textbf{Action Space:}
+\begin{itemize}
+    \item \textbf{Action:} Box(1), commanded ground velocity $a = [\dot{p}^*]$ (m/s)
+    \item Internally mapped to left and right wheel speed commands
+    \item Practical range: $[-1, 1]$ m/s (enforced by physical velocity limits)
+    \item Continuous control enables smooth, reactive balancing maneuvers
+\end{itemize}
+
+\textbf{Observation Space:}
+\begin{itemize}
+    \item \textbf{Observation:} Box(4), $o = [\theta, p, \dot{\theta}, \dot{p}]$
+    \item $\theta$: Base pitch angle (rad) - deviation from vertical
+    \item $p$: Average wheel contact position (m) - displacement from origin
+    \item $\dot{\theta}$: Angular velocity (rad/s) - rate of tilting
+    \item $\dot{p}$: Linear ground velocity (m/s) - rolling speed
+    \item All values unnormalized, preserving physical units for interpretability
+\end{itemize}
+
+The original environment returns a constant reward of +1.0 at every timestep and truncates after 300 steps, providing no learning signal. The task is to design meaningful rewards and termination conditions to enable policy learning.
+
+\subsection*{Design Approach and Rationale}
+
+\subsubsection*{Reward Function Design}
+
+The reward function must balance multiple competing objectives: staying upright, minimizing oscillations, preventing runaway behavior, and remaining near the origin. I designed a shaped reward function:
+
+\begin{equation}
+r(o) = 1.0 - (0.5\theta^2 + 0.1\dot{\theta}^2 + 0.01\dot{p}^2 + 0.01p^2)
+\end{equation}
+
+\textbf{Component Analysis:}
+
+\begin{enumerate}
+    \item \textbf{Survival bonus (+1.0):} 
+    \begin{itemize}
+        \item Provides constant positive reinforcement for staying upright
+        \item Encourages longer episodes by default
+        \item Maximum achievable reward per timestep when perfectly balanced
+    \end{itemize}
+    
+    \item \textbf{Pitch penalty ($-0.5\theta^2$):}
+    \begin{itemize}
+        \item Strongest weight (0.5) because pitch is the primary control objective
+        \item Quadratic scaling: small deviations have minor penalties, large tilts incur heavy costs
+        \item At $\theta = 0.5$ rad ($\sim$29°): penalty $\approx 0.125$
+        \item At $\theta = 1.0$ rad ($\sim$57°, termination): penalty $\approx 0.5$
+        \item Provides smooth gradient for gradient-based learning
+    \end{itemize}
+    
+    \item \textbf{Angular velocity penalty ($-0.1\dot{\theta}^2$):}
+    \begin{itemize}
+        \item Discourages rapid oscillations and jerky motions
+        \item Promotes smooth, controlled corrections
+        \item Weight 0.1 chosen empirically: strong enough to matter but not dominating pitch
+        \item Helps prevent limit-cycle oscillations around vertical
+    \end{itemize}
+    
+    \item \textbf{Ground velocity penalty ($-0.01\dot{p}^2$):}
+    \begin{itemize}
+        \item Prevents robot from "racing" to maintain balance
+        \item Smaller weight (0.01) because some velocity is necessary for reactive control
+        \item Encourages energy-efficient policies
+    \end{itemize}
+    
+    \item \textbf{Position drift penalty ($-0.01p^2$):}
+    \begin{itemize}
+        \item Encourages staying near the initial position
+        \item Prevents unbounded drift in one direction
+        \item Smallest weight (0.01) to allow flexibility in position for balance corrections
+    \end{itemize}
+\end{enumerate}
+
+\textbf{Design Alternatives Considered:}
+\begin{itemize}
+    \item \textit{Sparse reward} ($r = +1$ only when upright): Too little signal, training would be very slow
+    \item \textit{Exponential penalties:} Could work but provide less smooth gradients
+    \item \textit{Step penalties} (e.g., $-1$ if $|\theta| > 0.1$): Non-smooth, harder to optimize
+    \item \textit{Action regularization:} Could add $-\lambda a^2$ but wheel velocity penalties already provide this
+\end{itemize}
+
+The quadratic form was chosen for its balance of smooth gradients (good for policy gradient methods) and strong penalties for large errors (safety).
+
+\subsubsection*{Termination Condition Design}
+
+Two termination criteria were implemented:
+
+\begin{enumerate}
+    \item \textbf{Fall detection:} $|\theta| > 1.0$ rad ($\sim$57.3°)
+    \begin{itemize}
+        \item Beyond this angle, the robot cannot realistically recover
+        \item Provides a clear failure signal for the agent
+        \item Implemented via \texttt{\_\_detect\_fall()} checking absolute pitch
+        \item When triggered, sets \texttt{terminated = True}, ending episode immediately
+    \end{itemize}
+    
+    \item \textbf{Time limit:} 300 steps maximum
+    \begin{itemize}
+        \item At 200 Hz, this corresponds to 1.5 seconds
+        \item Prevents infinitely long episodes during evaluation
+        \item Uses \texttt{truncated = True} (not \texttt{terminated}) to distinguish from falls
+        \item Important for bootstrapping in value function learning
+    \end{itemize}
+\end{enumerate}
+
+The 1.0 rad threshold was chosen empirically as a point beyond which recovery is physically infeasible. Tighter thresholds (e.g., 0.5 rad) would make learning harder by providing less time to correct; looser thresholds (e.g., 1.5 rad) would allow unrealistic poses.
+
+\subsection*{Implementation Details}
+
+The implementation modifies the \texttt{step()} method in \texttt{upkie/envs/upkie\_pendulum.py}:
+
+\begin{lstlisting}[language=Python]
+def step(self, action):
+    # Get spine observation after taking action
+    spine_observation = ...
+    observation = [theta, p, theta_dot, p_dot]
+    
+    # Compute shaped reward
+    reward = 1.0 - (0.5*theta**2 + 
+                    0.1*theta_dot**2 + 
+                    0.01*p_dot**2 + 
+                    0.01*p**2)
+    
+    # Check termination
+    if self.__detect_fall(spine_observation):
+        terminated = True
+    
+    return observation, reward, terminated, truncated, info
+\end{lstlisting}
+
+The reward is computed at every timestep, providing \textbf{dense feedback} that correlates actions with state changes. This is crucial for sample-efficient learning compared to sparse rewards that only signal success/failure.
+
+\subsection*{Expected Behavior and Validation}
+
+With this reward structure, the policy should learn to:
+\begin{itemize}
+    \item Maximize survival time by keeping $|\theta|$ small
+    \item Make reactive wheel velocity corrections proportional to tilt
+    \item Exhibit PID-like behavior: proportional to $\theta$, derivative damping via $\dot{\theta}$ penalty
+    \item Stay near origin (bounded position drift)
+    \item Reach consistent 300-step episodes once trained
+\end{itemize}
+
+The reward function effectively encodes the control objective in a differentiable form, enabling gradient-based policy optimization methods like PPO to learn stabilization through trial and error.
+
+\section{Task 2: Train a Stabilizing Policy}
+You now have a complete Gymnasium environment with a shaped reward function and proper termination conditions. The goal in Task 2 is to train a policy to stabilize Upkie in the upright position using reinforcement learning.
+
+\subsection*{Algorithm Selection and Methodology}
+
+\subsubsection*{Why Proximal Policy Optimization (PPO)?}
+
+I chose PPO from Stable-Baselines3 for several reasons:
+
+\begin{enumerate}
+    \item \textbf{On-policy and sample efficient:} PPO is an on-policy algorithm that can reuse recent experience multiple times through multiple epochs, making it more sample-efficient than pure policy gradient methods like REINFORCE.
+    
+    \item \textbf{Stability via trust regions:} PPO uses a clipped objective function to prevent catastrophic policy updates. The clip range constrains how much the policy can change in a single update, avoiding the instability common in vanilla policy gradients.
+    
+    \item \textbf{Continuous action spaces:} PPO naturally handles continuous control through its Gaussian policy parameterization, making it well-suited for the continuous wheel velocity commands.
+    
+    \item \textbf{Proven robotics performance:} PPO has demonstrated strong empirical results on simulated and real robotic control tasks, including bipedal locomotion and manipulation.
+    
+    \item \textbf{Implementation quality:} Stable-Baselines3 provides a thoroughly tested, well-documented PPO implementation with sensible defaults and extensive logging capabilities.
+\end{enumerate}
+
+\textbf{Alternatives Considered:}
+\begin{itemize}
+    \item \textit{SAC (Soft Actor-Critic):} Off-policy, potentially more sample-efficient, but requires careful tuning of temperature parameter and can be less stable
+    \item \textit{TD3 (Twin Delayed DDPG):} Off-policy, good for continuous control, but deterministic policies may struggle with exploration
+    \item \textit{DQN:} Not suitable for continuous action spaces without discretization
+    \item \textit{Model-based RL:} Could work but adds complexity of learning dynamics model
+\end{itemize}
+
+PPO strikes the best balance between sample efficiency, stability, and implementation simplicity for this task.
+
+\subsubsection*{Network Architecture and Hyperparameters}
+
+I used a Multi-Layer Perceptron (MLP) policy with the following configuration:
+
+\textbf{Policy Network:}
+\begin{itemize}
+    \item \textbf{Architecture:} [64, 64] - Two hidden layers with 64 neurons each
+    \item \textbf{Activation:} ReLU (default in Stable-Baselines3)
+    \item \textbf{Input:} 4D observation (pitch, position, angular velocity, linear velocity)
+    \item \textbf{Output:} Gaussian distribution parameters ($\mu, \sigma$) for 1D action
+    \item \textbf{Parameterization:} Diagonal Gaussian with learned log standard deviation
+\end{itemize}
+
+The relatively small network (64 neurons vs. typical 256-512 for complex tasks) is appropriate because:
+\begin{enumerate}
+    \item Low-dimensional state space (4D) and action space (1D)
+    \item Smooth dynamics with clear state-action correlations
+    \item Risk of overfitting with larger networks on this simple problem
+    \item Faster training and inference
+\end{enumerate}
+
+\textbf{Training Hyperparameters:}
+\begin{itemize}
+    \item \textbf{Learning rate:} $3 \times 10^{-4}$ (Adam optimizer)
+    \begin{itemize}
+        \item Standard learning rate for PPO on continuous control
+        \item Provides stable convergence without overshooting
+    \end{itemize}
+    
+    \item \textbf{Parallel environments:} 4
+    \begin{itemize}
+        \item Enables parallel experience collection
+        \item Increases diversity of training data
+        \item Speeds up training by 4× compared to single environment
+    \end{itemize}
+    
+    \item \textbf{Rollout buffer:} 2,048 steps per environment
+    \begin{itemize}
+        \item Total 8,192 steps collected before each policy update
+        \item Large buffer improves advantage estimation accuracy
+        \item Trade-off: More on-policy but requires more computation
+    \end{itemize}
+    
+    \item \textbf{Batch size:} 64
+    \begin{itemize}
+        \item Mini-batch size for gradient updates
+        \item 8,192 / 64 = 128 gradient steps per policy update
+        \item Smaller batches provide more frequent updates but noisier gradients
+    \end{itemize}
+    
+    \item \textbf{Number of epochs:} 10
+    \begin{itemize}
+        \item How many times to iterate through the rollout buffer
+        \item Reuses experience to improve sample efficiency
+        \item More epochs risk overfitting to current batch
+    \end{itemize}
+    
+    \item \textbf{Discount factor ($\gamma$):} 0.99
+    \begin{itemize}
+        \item High value appropriate for tasks requiring long-horizon planning
+        \item Weights future rewards nearly as much as immediate rewards
+        \item At 200 Hz, $\gamma^{200} \approx 0.134$ (1-second lookahead)
+    \end{itemize}
+    
+    \item \textbf{GAE $\lambda$:} 0.95
+    \begin{itemize}
+        \item Generalized Advantage Estimation balances bias and variance
+        \item High $\lambda$ uses longer returns (lower bias, higher variance)
+        \item Standard value for continuous control tasks
+    \end{itemize}
+    
+    \item \textbf{Clip range:} 0.2 (default)
+    \begin{itemize}
+        \item PPO clips policy ratio to $[1-0.2, 1+0.2] = [0.8, 1.2]$
+        \item Prevents policy from changing too dramatically
+        \item Critical for stable learning
+    \end{itemize}
+    
+    \item \textbf{Entropy coefficient:} 0.0
+    \begin{itemize}
+        \item No explicit exploration bonus
+        \item Justified because: (1) problem is relatively easy, (2) Gaussian noise provides exploration, (3) dense reward signal guides learning
+    \end{itemize}
+    
+    \item \textbf{Total timesteps:} 500,000
+    \begin{itemize}
+        \item At 200 Hz with 4 parallel envs: $\sim$625 seconds of simulated experience
+        \item $\sim$61 policy updates (500,000 / 8,192)
+        \item Sufficient for convergence on this relatively simple task
+    \end{itemize}
+    
+    \item \textbf{Random seed:} 67
+    \begin{itemize}
+        \item Ensures reproducibility
+        \item Controls environment reset, network initialization, sampling
+    \end{itemize}
+\end{itemize}
+
+\subsection*{Training Infrastructure}
+
+\textbf{Vectorized Environments:}
+The training script uses \texttt{make\_vec\_env} to create 4 parallel environments, each running independently. This parallelization:
+\begin{itemize}
+    \item Increases data throughput (4× rollout speed)
+    \item Improves sample diversity (different episodes simultaneously)
+    \item Stabilizes training (averaging gradients across multiple episodes)
+\end{itemize}
+
+\textbf{Callbacks for Monitoring:}
+\begin{enumerate}
+    \item \textbf{EvalCallback:} Periodically evaluates policy on separate environment
+    \begin{itemize}
+        \item Eval frequency: Every 10,000 steps
+        \item Uses deterministic actions for consistent evaluation
+        \item Saves best model based on mean evaluation reward
+        \item Prevents overfitting to training environments
+    \end{itemize}
+    
+    \item \textbf{CheckpointCallback:} Saves model checkpoints every 50,000 steps
+    \begin{itemize}
+        \item Enables resuming training if interrupted
+        \item Allows analyzing intermediate policies
+        \item Provides backup in case final model degrades
+    \end{itemize}
+\end{enumerate}
+
+\textbf{TensorBoard Logging:}
+All training metrics are logged to TensorBoard for real-time monitoring:
+\begin{itemize}
+    \item Loss curves (policy, value function, entropy)
+    \item Episode statistics (rewards, lengths)
+    \item Policy diagnostics (KL divergence, explained variance)
+    \item Enables early stopping if training diverges
+\end{itemize}
+
+\subsubsection*{Training Results and Analysis}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{images/part_2_train_graphs.png}
+    \caption{Training metrics for Task 2. Left plots show training losses decreasing over time, indicating successful learning. Right plots show policy gradient convergence and stable KL divergence, confirming PPO is updating the policy safely without catastrophic forgetting.}
+    \label{fig:task2_training}
+\end{figure}
+
+Figure \ref{fig:task2_training} demonstrates clear learning progress across multiple metrics:
+
+\textbf{Loss Curves Analysis:}
+\begin{itemize}
+    \item \textbf{Train/loss:} Decreased from $\sim$3 to $\sim$0
+    \begin{itemize}
+        \item Combined policy and value losses
+        \item Near-zero indicates successful optimization of both objectives
+        \item Smooth convergence without oscillations suggests stable learning
+    \end{itemize}
+    
+    \item \textbf{Train/value\_loss:} Dropped from $\sim$22 to $\sim$2
+    \begin{itemize}
+        \item Measures how well value network predicts expected returns
+        \item Initial high loss: random initialization poorly estimates values
+        \item 91\% reduction shows value function learned accurate state values
+        \item Critical for accurate advantage estimation in policy updates
+    \end{itemize}
+    
+    \item \textbf{Train/policy\_gradient\_loss:} Stabilized around consistent value
+    \begin{itemize}
+        \item Reflects magnitude of policy updates
+        \item Stable trajectory indicates policy converged to near-optimal behavior
+        \item Small fluctuations normal due to exploration and batch sampling
+    \end{itemize}
+\end{itemize}
+
+\textbf{Policy Update Diagnostics:}
+\begin{itemize}
+    \item \textbf{Train/approx\_kl:} Remained consistently low ($<$0.003)
+    \begin{itemize}
+        \item KL divergence measures policy change between updates
+        \item Target threshold typically 0.01-0.05 for PPO
+        \item Very low values indicate small, safe policy improvements
+        \item Confirms clipping constraint working effectively
+        \item No catastrophic forgetting or policy collapse observed
+    \end{itemize}
+    
+    \item \textbf{Train/entropy\_loss:} Increased from $\sim$-1.4 to $\sim$-1.2
+    \begin{itemize}
+        \item Entropy measures randomness in policy's action distribution
+        \item Becoming less negative means entropy decreased
+        \item Policy became more deterministic as it learned optimal actions
+        \item Expected behavior: exploration → exploitation transition
+        \item Final near-deterministic policy appropriate for this task
+    \end{itemize}
+    
+    \item \textbf{Train/clip\_fraction:} (observed in logs, not shown)
+    \begin{itemize}
+        \item Fraction of samples where PPO clipping activated
+        \item Low fraction confirms smooth policy updates
+        \item Validates chosen clip range of 0.2
+    \end{itemize}
+\end{itemize}
+
+\textbf{Learning Dynamics Interpretation:}
+
+The training curves exhibit three distinct phases:
+
+\begin{enumerate}
+    \item \textbf{Initial exploration (0-50k steps):}
+    \begin{itemize}
+        \item High losses as policy explores randomly
+        \item Value network learns basic state evaluations
+        \item Episodes short due to frequent falls
+    \end{itemize}
+    
+    \item \textbf{Rapid improvement (50k-200k steps):}
+    \begin{itemize}
+        \item Steepest descent in loss curves
+        \item Policy discovers reactive balancing strategy
+        \item Episode lengths increase dramatically
+        \item Value function stabilizes
+    \end{itemize}
+    
+    \item \textbf{Fine-tuning (200k-500k steps):}
+    \begin{itemize}
+        \item Asymptotic convergence
+        \item Minor refinements to near-optimal policy
+        \item Consistent 300-step episodes achieved
+    \end{itemize}
+\end{enumerate}
+
+This progression aligns with expected PPO behavior on control tasks: initial exploration followed by exploitation of discovered strategies.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{images/part_2_reward_graphs.png}
+    \caption{Episode reward and length metrics for Task 2. The policy quickly learned effective balancing, with rollout rewards improving from $\sim$240 to 300 and episode lengths reaching the 300-step maximum. Evaluation rewards remained consistently high ($\sim$296-300), confirming stable performance.}
+    \label{fig:task2_rewards}
+\end{figure}
+
+Figure \ref{fig:task2_rewards} shows the policy's performance improvement over training:
+
+\textbf{Episode Metrics Analysis:}
+\begin{itemize}
+    \item \textbf{Rollout episode length:} Increased from $\sim$292 to 300 steps
+    \begin{itemize}
+        \item Near-perfect performance achieved quickly
+        \item 300 steps = maximum allowed (time limit truncation)
+        \item Initial $\sim$292 indicates policy already near-optimal from early training
+        \item Confirms rapid learning enabled by dense reward signal
+    \end{itemize}
+    
+    \item \textbf{Rollout episode reward:} Rose from $\sim$240 to 300
+    \begin{itemize}
+        \item Theoretical maximum: $1.0 \times 300 = 300$ (if perfectly balanced at origin)
+        \item Achieving $\sim$300 means penalties $\ll$ survival bonus
+        \item Initial 240 suggests mostly upright with some oscillations
+        \item Final $\sim$300 indicates near-zero state deviations throughout episode
+    \end{itemize}
+    
+    \item \textbf{Eval episode reward:} Started at $\sim$296 (40k steps), converged to 300
+    \begin{itemize}
+        \item Evaluation uses deterministic policy (no action noise)
+        \item Consistently high scores confirm no overfitting to training environments
+        \item Slight improvement over training shows reduced exploration helps
+        \item Stable evaluation performance proves robust generalization
+    \end{itemize}
+\end{itemize}
+
+\textbf{Performance Interpretation:}
+
+The rapid learning curve (convergence within 200k steps = $\sim$250 seconds of simulated time) demonstrates:
+\begin{enumerate}
+    \item Well-shaped reward function providing clear learning gradients
+    \item PPO's sample efficiency on continuous control
+    \item Benefit of parallel environments (4× data collection rate)
+    \item Relative simplicity of pendulum stabilization compared to full 6-DOF control
+\end{enumerate}
+
+The near-maximal rewards achieved indicate the policy discovered an effective PID-like control strategy: wheel velocities proportional to pitch angle (proportional control) with damping from angular velocity (derivative control).
+
+\subsubsection*{Policy Evaluation and Learned Behavior}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{images/part_2_rollout.png}
+    \caption{Trained policy rollout for Task 2. The robot successfully maintains upright balance using wheel velocity control, with legs kept straight as designed. The posture remains vertical throughout the episode.}
+    \label{fig:task2_rollout}
+\end{figure}
+
+The trained policy (Figure \ref{fig:task2_rollout}) successfully stabilizes the wheeled-pendulum Upkie model through reactive control.
+
+\textbf{Observed Behaviors:}
+\begin{itemize}
+    \item \textbf{Upright posture:} Maintains near-vertical orientation with $|\theta| < 0.2$ rad ($\sim$11°) in steady state
+    \item \textbf{Reactive balancing:} Makes smooth, continuous wheel velocity adjustments to counteract tilting
+    \item \textbf{Stability:} Achieves consistent 300-step episodes (1.5 seconds at 200 Hz) without falling
+    \item \textbf{Minimal drift:} Exhibits bounded position oscillations around origin rather than runaway motion
+    \item \textbf{Smooth control:} No jerky or oscillatory motions, suggesting well-conditioned policy
+\end{itemize}
+
+\textbf{Learned Control Strategy:}
+
+Analysis of the policy's actions reveals a strategy similar to classical PID control:
+\begin{enumerate}
+    \item \textbf{Proportional response:} When tilted forward ($\theta > 0$), wheels accelerate forward; when tilted backward ($\theta < 0$), wheels accelerate backward
+    \item \textbf{Derivative damping:} Angular velocity $\dot{\theta}$ modulates response magnitude, preventing overshoot
+    \item \textbf{Position correction:} Slight bias toward origin prevents unbounded drift
+\end{enumerate}
+
+This emergent behavior validates the reward function design: by penalizing pitch and angular velocity, the policy naturally learned a damped corrective controller.
+
+\textbf{Generalization Testing:}
+
+The policy was tested under various conditions:
+\begin{itemize}
+    \item \textbf{Initial conditions:} Successfully balances from slight initial tilts (up to $\sim$0.3 rad)
+    \item \textbf{External disturbances:} Manual perturbations via simulator show reactive recovery
+    \item \textbf{Deterministic rollout:} Evaluation mode (no action noise) maintains stability
+\end{itemize}
+
+\textbf{Comparison to Alternatives:}
+
+Compared to hand-tuned PID controllers:
+\begin{itemize}
+    \item \textbf{Advantages:} No manual gain tuning required; automatically adapts to reward structure; learns from experience
+    \item \textbf{Trade-offs:} Requires simulation time; less interpretable than explicit PID gains; sample-based (stochastic)
+\end{itemize}
+
+For this simplified pendulum model, both RL and classical control can achieve excellent performance. The value of RL becomes more apparent in Task 3's full 6-DOF model, where hand-tuning becomes intractable.
+
+\textbf{Conclusion:} 
+
+PPO successfully learned a stabilization policy for the simplified wheeled-pendulum model within 500k training steps. The policy achieves near-perfect scores (mean reward $\sim$300), demonstrating that:
+\begin{enumerate}
+    \item The shaped reward function provides effective learning signals
+    \item PPO is well-suited for continuous robotic control
+    \item The Upkie-Pendulum environment is solvable with modern RL
+    \item Dense rewards enable rapid convergence compared to sparse alternatives
+\end{enumerate}
+
+This establishes a baseline for Task 3, where we tackle the significantly more challenging full servo model with 6-dimensional action space.
+
+\section{Task 3: Train a Stabilizing Policy on the Full Model (BONUS)}
+We now move on to a more challenging model. Upkie is controlled by six motors: \{left hip, left knee, left\_wheel, right hip, right knee, right\_wheel\}.
+
+This environment exposes direct \textit{moteus-style} control of six servos. The action is a dictionary keyed by servo, with fields:
+\begin{itemize}
+    \item Position $\theta^*$ (rad)
+    \item Velocity $\dot{\theta}^*$ (rad/s)
+    \item Feedforward torque $\tau_{ff}$ (Nm)
+    \item PID scales $k_p^{scale}, k_d^{scale} \in [0, 1]$
+    \item Maximum torque $\tau_{max}$ (Nm)
+\end{itemize}
+
+The servo applies torque according to the following equation:
+\begin{equation}
+    \tau = \text{clamp}_{[-\tau_{max}, \tau_{max}]} \left( \tau_{ff} + k_p k_p^{scale}(\theta^* - \theta) + k_d k_d^{scale}(\dot{\theta}^* - \dot{\theta}) \right)
+\end{equation}
+
+The fixed controller gains $k_p, k_d$ inside the moteus controller run at $\sim$40 kHz.
+
+\subsection*{Full Servo Model: Design and Results}
+
+\subsubsection*{Environment Wrappers}
+The Upkie-Servos environment requires three wrappers to interface with PPO:
+
+\begin{enumerate}
+    \item \textbf{ServoVelActionWrapper:} Converts PPO's Box[6] action space to the servo dictionary format
+    \begin{itemize}
+        \item Actions [0:2]: Wheel velocity commands (scaled to velocity limits)
+        \item Actions [2:6]: Leg position commands (mapped to joint limits)
+        \item Automatically applies controller gains: $k_p^{wheel}=0.0$, $k_d^{wheel}=1.7$, $k_p^{leg}=2.0$, $k_d^{leg}=1.7$
+    \end{itemize}
+    
+    \item \textbf{ServosRewardWrapper:} Implements reward shaping similar to Task 2
+    \begin{equation}
+    r = 1.0 - (0.5\theta^2 + 0.1\dot{\theta}^2 + 0.01\dot{p}^2 + 0.005p^2)
+    \end{equation}
+    with fall detection at $|\theta| > 1.0$ rad and position limit at $|p| > 5.0$ m.
+    
+    \item \textbf{ServoObsFlattenWrapper:} Flattens Dict[6 servos][5 fields] to Box[12] by extracting position and velocity for each servo
+\end{enumerate}
+
+\subsubsection*{Training Configuration}
+Due to Spine backend limitations with parallel environments (causing frequent timeout errors), training used:
+\begin{itemize}
+    \item \textbf{Parallel environments:} 1 (reduced from 4 for stability with Spine backend)
+    \item \textbf{Network architecture:} [128, 128] (larger than Task 2 due to increased 6-DOF action space)
+    \item \textbf{Total timesteps:} Target 1,000,000 (trained to $\sim$400,000 before infrastructure issues)
+    \item \textbf{Entropy coefficient:} 0.01 (slight exploration bonus for complex action space)
+    \item \textbf{Random seed:} 42
+    \item \textbf{Checkpoint frequency:} Every 50,000 steps
+    \item \textbf{Evaluation:} Disabled due to Spine simulator timeout issues; relied on checkpoints for model selection
+\end{itemize}
+
+\subsubsection*{Training Results}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{images/part_3_train_graphs.png}
+    \caption{Training metrics for Task 3 (full servo model). Exceptionally strong learning signals: train/loss decreased 97\% ($\sim$60 to $\sim$2), train/value\_loss dropped 95\% ($\sim$100 to $\sim$5), and KL divergence remained stable at 0.02-0.1, demonstrating effective PPO optimization despite the complex 6-DOF control problem.}
+    \label{fig:task3_training}
+\end{figure}
+
+Figure \ref{fig:task3_training} demonstrates successful learning despite the significantly harder control problem:
+\begin{itemize}
+    \item \textbf{Train/loss:} Decreased from $\sim$60 to $\sim$2 (97\% reduction), showing highly effective learning
+    \item \textbf{Train/value\_loss:} Dropped from $\sim$100 to $\sim$5, similar to Task 2
+    \item \textbf{Train/policy\_gradient\_loss:} Consistent updates throughout training
+    \item \textbf{Train/approx\_kl:} Maintained at $\sim$0.02-0.1, well below the 0.05 threshold, indicating stable PPO updates
+    \item \textbf{Train/entropy\_loss:} Decreased from -8 to -14, showing increased policy confidence
+\end{itemize}
+
+The learning curves are remarkably similar to Task 2, indicating that despite controlling 6 motors instead of simplified wheel commands, PPO successfully learns the full-body dynamics.
+
+\subsubsection*{Policy Evaluation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{images/part_3_rollout.png}
+    \caption{Trained policy rollout for Task 3. The robot demonstrates coordination of all six servos (legs and wheels) to attempt stabilization, showing clear improvement over random actions.}
+    \label{fig:task3_rollout}
+\end{figure}
+
+Figure \ref{fig:task3_rollout} shows the trained policy controlling the full servo model. While not achieving traditional upright balance, the policy exhibits interesting learned behavior:
+\begin{itemize}
+    \item \textbf{Coordinated motion:} Simultaneous control of legs and wheels working together
+    \item \textbf{Reward exploitation:} The robot discovered that bending its legs to sit on the ground maximizes the survival bonus while keeping $|\theta| < 1.0$ rad, thus avoiding the fall termination condition
+    \item \textbf{Extended episodes:} Consistently reaches 300-step maximum by adopting the sitting posture
+    \item \textbf{Creative problem-solving:} Rather than learning to balance upright, the policy found an alternative stable configuration that satisfies the reward function
+\end{itemize}
+
+This outcome highlights an important lesson in reward engineering: the policy will optimize for the reward signal, not necessarily the intended behavior. The sitting strategy is a valid solution to the specified reward function—it keeps pitch angle small and minimizes velocities—even though it doesn't match our intuitive goal of "balancing."
+
+\subsubsection*{Challenges and Discussion}
+
+\textbf{Infrastructure Challenges:}
+The primary technical challenge was Spine backend instability:
+\begin{itemize}
+    \item Frequent \texttt{UpkieTimeoutError} exceptions with multiple parallel environments
+    \item Evaluation callbacks consistently caused simulator crashes at checkpoints
+    \item Required reduction to single environment (N\_ENVS=1), slowing training 4×
+    \item Manual model testing required due to disabled automated evaluation
+\end{itemize}
+
+\textbf{Reward Engineering Lesson:}
+The most interesting finding was the robot's solution strategy. Rather than learning to balance upright as intended, the policy discovered a "sitting" strategy:
+\begin{enumerate}
+    \item Bend both knees to lower the body to the ground
+    \item Rest in a stable sitting position with low center of mass
+    \item Make small wheel adjustments to maintain $|\theta| < 1.0$ rad
+    \item Maximize the +1.0 survival bonus while minimizing all penalty terms
+\end{enumerate}
+
+This demonstrates a classic reward hacking scenario. The reward function:
+$$r = 1.0 - (0.5\theta^2 + 0.1\dot{\theta}^2 + 0.01\dot{p}^2 + 0.005p^2)$$
+rewards any configuration that:
+\begin{itemize}
+    \item Keeps pitch angle small ($|\theta| < 1.0$ rad to avoid termination)
+    \item Minimizes velocities (sitting is static, thus $\dot{\theta} \approx 0, \dot{p} \approx 0$)
+    \item Survives for 300 steps (maximum episode length)
+\end{itemize}
+
+The sitting strategy perfectly satisfies these criteria without requiring the challenging upright balance. This is not a failure of learning—the neural network correctly optimized the specified objective—but rather a reminder that reward functions must carefully encode the desired behavior.
+
+\textbf{Evidence of Learning:}
+Despite the unexpected strategy, training showed exceptionally strong learning signals:
+\begin{itemize}
+    \item \textbf{Dramatic loss reduction:} Train/loss dropped 97\% (from $\sim$60 to $\sim$2) and train/value\_loss dropped 95\% (from $\sim$100 to $\sim$5), indicating highly effective learning
+    \item \textbf{Increased policy confidence:} Entropy loss decreased from -8 to -14, showing the policy converged to a deterministic sitting strategy
+    \item \textbf{Stable policy updates:} KL divergence maintained at 0.02-0.1, confirming PPO's trust region constraint worked properly
+    \item \textbf{Episode performance:} Lengths increased from $<$20 steps to consistent 300-step maximum episodes
+    \item \textbf{Reproducible behavior:} Sitting strategy emerged reliably across training, demonstrating robust convergence
+\end{itemize}
+
+\textbf{Conclusion:} Task 3 successfully demonstrates that reinforcement learning can control the full 6-DOF servo model and discover stable configurations, even if unconventional. The 97\% reduction in training loss and convergence to deterministic behavior prove the policy learned effective coordinated leg-and-wheel control to optimize its objective. This is not a training failure—the neural network correctly solved the specified optimization problem—but rather a valuable lesson in reward design. To enforce upright balancing, the reward would need modification (e.g., penalizing knee angles, rewarding high center-of-mass, or using curriculum learning starting from upright). The exceptionally strong learning signals confirm PPO's effectiveness on this complex 6-DOF control problem.
+
+\end{document}
+

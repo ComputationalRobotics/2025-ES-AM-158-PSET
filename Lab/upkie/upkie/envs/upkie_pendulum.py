@@ -313,9 +313,18 @@ class UpkiePendulum(gym.Wrapper):
               particular the full observation dictionary coming from the spine.
         """
         spine_action = self.__get_spine_action(action)
-        _, reward, terminated, truncated, info = self.env.step(spine_action)
+        # No longer using the reward from the environment
+        _, _, terminated, truncated, info = self.env.step(spine_action)
         spine_observation = info["spine_observation"]
         observation = self.__get_env_observation(spine_observation)
+        
+        # Reward function
+        theta = observation[0]
+        p = observation[1]
+        theta_dot = observation[2]
+        p_dot = observation[3]
+        reward = 1.0 - (0.5*theta**2 + 0.1 * theta_dot**2 + 0.01 * p_dot**2 + 0.01 * p**2)
+
         if self.__detect_fall(spine_observation):
             terminated = True
         self.time_stamp += 1
